@@ -363,10 +363,8 @@ public class PurpleBoss {
     public int getMaxHP() { return maxHp; }
 
     public void draw(Graphics2D g) {
-        // Draw persistent rotating beams if any exist
-        for (RotatingBeam beam : persistentBeams) {
-            beam.draw(g);
-        }
+        
+        
 
         // Draw regular beams (behind)
         for (Beam beam : beams) {

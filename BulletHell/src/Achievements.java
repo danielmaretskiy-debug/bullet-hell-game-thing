@@ -15,7 +15,7 @@ public class Achievements {
     private void initializeAchievements() {
         achievements.put("First Blood", false);           // Kill first enemy
         achievements.put("Wave Survivor", false);         // Survive wave 5
-        achievements.put("Boss Slayer", false);           // Defeat a boss
+        achievements.put("First Boss", false);           // Defeat a boss
         achievements.put("Medic", false);                 // Collect 5 healing items
         achievements.put("Wave Slayer", false);                // Survive 10 waves without taking damage
         achievements.put("Sharpshooter", false);          // Kill 50 enemies
@@ -23,6 +23,7 @@ public class Achievements {
         achievements.put("Wave Obliterator", false);             // Reach wave 30
         achievements.put("Purple Hunter", false);         // Kill 3 purple circle enemies
         achievements.put("Untouchable", false);           // Reach wave 10 without damage
+        achievements.put("Second Boss", false);           // Reach wave 10 without damage
     }
 
     public boolean unlock(String achievement) {

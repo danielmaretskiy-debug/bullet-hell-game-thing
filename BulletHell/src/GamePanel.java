@@ -364,7 +364,7 @@ public class GamePanel extends JPanel {
                 }
 
                 if (purpleBoss.isDead()) {
-                    unlockAchievement("Boss Slayer");
+                    unlockAchievement("Second Boss");
                     waveNumber++;
                     startWave();
                 }
@@ -391,7 +391,7 @@ public class GamePanel extends JPanel {
                 }
 
                 if (boss.isDead()) {
-                    unlockAchievement("Boss Slayer");
+                    unlockAchievement("First Boss");
                     waveNumber++;
                     startWave();
                 }
