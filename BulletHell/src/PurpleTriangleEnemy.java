@@ -80,7 +80,7 @@ public class PurpleTriangleEnemy {
                     nextY = height - 20;
                     dashAngle = -dashAngle; // Reflect vertically
                 }
-                
+
                 x = nextX;
                 y = nextY;
             }

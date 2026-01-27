@@ -108,6 +108,38 @@ public class Beam {
         return state == 3 && stateTimer >= FADE_DURATION;
     }
 
+    public boolean checkCollision(int px, int py) {
+        // Use rotated-rectangle collision matching the visual beam rect.
+        // Transform point into beam-local coordinates by translating to (x,y)
+        double dx = px - x;
+        double dy = py - y;
+        double c = Math.cos(angle);
+        double s = Math.sin(angle);
+        // rotate point by -angle: x' = c*dx + s*dy; y' = -s*dx + c*dy
+        double localX = c * dx + s * dy;
+        double localY = -s * dx + c * dy;
+
+        int beamLength = (int) Math.sqrt(screenWidth * screenWidth + screenHeight * screenHeight) * 2;
+
+        // Only active/flashing/shrinking beams should damage (state 1 or 2)
+        if (state == 1) {
+            int halfH = 30; // visual half-height during flash
+            if (localX >= -beamLength / 2 && localX <= beamLength / 2 && localY >= -halfH && localY <= halfH) {
+                // avoid near-origin hits
+                if (Math.hypot(localX, localY) > 20) return true;
+            }
+        } else if (state == 2) {
+            // shrinking height depends on progress
+            float progress = (float) stateTimer / SHRINK_DURATION;
+            int shrinkH = (int) (60 * (1 - progress));
+            int halfH = Math.max(4, shrinkH / 2);
+            if (localX >= -beamLength / 2 && localX <= beamLength / 2 && localY >= -halfH && localY <= halfH) {
+                if (Math.hypot(localX, localY) > 20) return true;
+            }
+        }
+        return false;
+    }
+
     public void setRemoveAfterFade(boolean remove) {
         // Ensures beam will be removed after fade completes (already default behavior)
     }

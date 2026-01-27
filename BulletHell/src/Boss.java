@@ -22,7 +22,7 @@ public class Boss {
 
     public void update(int width, int height, int wave) {
         // Boss moves slowly
-        x += (Math.random() - 1) * 2;
+        x += (Math.random() - 0.5) * 2;
         x = Math.max(50, Math.min(width - 50, x));
 
         patternTimer++;
@@ -55,11 +55,22 @@ public class Boss {
             beamSpawnTimer++;
             if (beamSpawnTimer == 1) {
                 int numBeams = 2 + (int)(Math.random() * 5); // 2-6 beams
+                if (hp < maxHP / 2) numBeams += 3;
+                if (hp < maxHP / 3) numBeams += 4;
                 for (int i = 0; i < numBeams; i++) {
                     int beamX = 100 + (int)(Math.random() * (width - 200));
                     int beamY = 100 + (int)(Math.random() * (height - 200));
                     double randomAngle = Math.random() * Math.PI * 2;
                     beams.add(new Beam(beamX, beamY, width, height, randomAngle));
+                }
+            }
+
+            // Add a sweeping vertical beam wave at low HP
+            if (hp < maxHP / 2 && beamSpawnTimer % 120 == 0) {
+                int columns = 5;
+                for (int c = 0; c < columns; c++) {
+                    int bx = 50 + c * (width - 100) / (columns - 1);
+                    beams.add(new Beam(bx, -10, width, height, Math.PI / 2)); // downward beam from top
                 }
             }
             

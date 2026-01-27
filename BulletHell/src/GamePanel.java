@@ -219,9 +219,9 @@ public class GamePanel extends JPanel {
             // Scale enemy spawning based on wave
             // Regular enemies cap at lower numbers, triangles and green triangles increase
             int regularEnemies = Math.min(2 + waveNumber / 5, 3);
-            if (!purpleCircleEnemies.isEmpty()) {
-                regularEnemies = Math.max(0, regularEnemies - 2); // Further reduce when purple circles present
-            }
+            //if (!purpleCircleEnemies.isEmpty()) {
+                //regularEnemies = Math.max(0, regularEnemies - 2); // Further reduce when purple circles present
+            //}
             
             for (int i = 0; i < regularEnemies; i++) {
                 enemies.add(Enemy.spawnRandom(WIDTH, HEIGHT, waveNumber));
@@ -325,6 +325,11 @@ public class GamePanel extends JPanel {
                     }
                 }
 
+                // Check contact collision with player
+                if (enemy.collidesWith(player.getX(), player.getY())) {
+                    player.takeDamage(1);
+                }
+
                 if (enemy.isDead()) {
                     totalKills++;
                     if (totalKills == 1) {
@@ -373,10 +378,24 @@ public class GamePanel extends JPanel {
                 if (purpleBoss.collidesWith(player.getX(), player.getY())) {
                     player.takeDamage(1);
                 }
+
+
             } else {
                 // Regular boss fight
                 boss.update(WIDTH, HEIGHT, waveNumber);
                 boss.spawnProjectiles(enemyProjectiles, player.getX(), player.getY(), WIDTH, HEIGHT);
+
+                // Check beam collisions from regular boss
+                try {
+                    for (Beam b : boss.getBeams()) {
+                        if (b.checkCollision(player.getX(), player.getY())) {
+                            player.takeDamage(1);
+                            System.out.println("GamePanel: player hit by Boss beam");
+                        }
+                    }
+                } catch (Exception ex) {
+                    // ignore if boss has no beams or method access issues
+                }
 
                 // Check player projectile collisions with boss
                 for (int j = playerProjectiles.size() - 1; j >= 0; j--) {
@@ -416,6 +435,21 @@ public class GamePanel extends JPanel {
                 }
             }
 
+            // Check contact collision with player
+            if (enemy.collidesWith(player.getX(), player.getY())) {
+                player.takeDamage(1);
+            }
+
+            // Check contact collision with player
+            if (enemy.collidesWith(player.getX(), player.getY())) {
+                player.takeDamage(1);
+            }
+
+            // Check contact collision with player
+            if (enemy.collidesWith(player.getX(), player.getY())) {
+                player.takeDamage(1);
+            }
+
             if (enemy.isDead()) {
                 if (Math.random() < 0.3) {
                     healingItems.add(new HealingItem(enemy.getX(), enemy.getY()));
@@ -439,6 +473,11 @@ public class GamePanel extends JPanel {
                     }
                     break;
                 }
+            }
+
+            // Check contact collision with player (damage while dashing/hitting)
+            if (enemy.collidesWith(player.getX(), player.getY())) {
+                player.takeDamage(1);
             }
 
             if (enemy.isDead()) {
@@ -466,6 +505,11 @@ public class GamePanel extends JPanel {
                 }
             }
 
+            // Check contact collision with player (damage while dashing/hitting)
+            if (enemy.collidesWith(player.getX(), player.getY())) {
+                player.takeDamage(1);
+            }
+
             if (enemy.isDead()) {
                 if (Math.random() < 0.4) {
                     healingItems.add(new HealingItem(enemy.getX(), enemy.getY()));
@@ -490,6 +534,11 @@ public class GamePanel extends JPanel {
                 }
             }
 
+            // Check contact collision with player
+            if (enemy.collidesWith(player.getX(), player.getY())) {
+                player.takeDamage(1);
+            }
+
             if (enemy.isDead()) {
                 totalKills++;
                 if (totalKills >= 50) {
@@ -500,6 +549,19 @@ public class GamePanel extends JPanel {
                 }
                 purpleCircleEnemies.remove(i);
                 unlockAchievement("Purple Hunter");
+            }
+            else {
+                // Check beams that PurpleCircleEnemy spawns for player collisions
+                try {
+                    for (Beam b : enemy.getBeams()) {
+                        if (b.checkCollision(player.getX(), player.getY())) {
+                            player.takeDamage(1);
+                            System.out.println("GamePanel: player hit by PurpleCircleEnemy beam");
+                        }
+                    }
+                } catch (Exception ex) {
+                    // ignore
+                }
             }
         }
 

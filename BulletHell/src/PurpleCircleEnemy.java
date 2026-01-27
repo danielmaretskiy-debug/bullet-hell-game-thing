@@ -160,6 +160,10 @@ public class PurpleCircleEnemy {
         return beamPositions;
     }
 
+    public ArrayList<Beam> getBeams() {
+        return beams;
+    }
+
     public int getX() { return x; }
     public int getY() { return y; }
 }

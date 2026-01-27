@@ -15,6 +15,14 @@ public class PurpleBoss {
     private int dashDashCount = 0; // Current dash count in sequence
     private int dashTimer = 0;
     private double dashAngle = 0;
+    private double dashSpeed = 16.0; // variable dash speed that decays on bounce
+    private int dashBounces = 0; // count bounces during a single dash to prevent infinite bouncing
+    private int wallHitTimer = 0;
+    private int wallHitX = 0;
+    private int wallHitY = 0;
+    // Per-dash scaling knobs (computed when a dash sequence is queued)
+    private int currentDashAllowedBounces = 3;
+    private int currentDashMaxFrames = DASH_MAX_FRAMES;
     private double spiralAngle = 0;
     private boolean shieldActive = false;
     private int shieldTimer = 0;
@@ -32,11 +40,13 @@ public class PurpleBoss {
     private double bossRotation = 0; // For spinning during dash attack
     
     private int dashFinishTimer = 0; // visual cue timer after dash ends
+    private int rotatingBeamCueTimer = 0; // visual cue when rotating beams spawn
     
     // Attack durations
     private static final int BEAM_SPAM_DURATION = 180; // 3 seconds
     private static final int BEAM_SPIN_DURATION = 400; // 6.67 seconds - longer for rotating beams
     private static final int DASH_ATTACK_DURATION = 300; // 5 seconds per dash attempt
+    private static final int DASH_MAX_FRAMES = 80; // cap per individual dash
     private static final int SPIRAL_DURATION = 180; // 3 seconds
     private static final int STATE_TRANSITION_DURATION = 60; // 1 second between attacks
     private static final int SHIELD_DURATION = 250; // Shield lasts 4.17 seconds
@@ -73,6 +83,10 @@ public class PurpleBoss {
         bossRotation += 0.01;
         if (bossRotation > Math.PI * 2) bossRotation -= Math.PI * 2;
 
+        // Keep boss on-screen each tick to avoid getting stuck offscreen
+        x = Math.max(60, Math.min(screenWidth - 60, x));
+        y = Math.max(60, Math.min(screenHeight - 60, y));
+
         // Dash finish cue countdown
         if (dashFinishTimer > 0) dashFinishTimer--;
 
@@ -100,17 +114,20 @@ public class PurpleBoss {
         beams.removeIf(Beam::isFinished);
 
         // Update state transition (do not transition while dash attack is active)
+        // Only increment the transition timer if it has been primed (>0).
         if (attackState != 2) {
-            stateTransitionTimer++;
-            if (stateTransitionTimer >= STATE_TRANSITION_DURATION) {
-                stateTransitionTimer = 0;
-                // Move to next attack state
-                attackState = (attackState + 1) % 4;
-                attackTimer = 0;
-                shieldActive = false;
-                dashHighlightTimer = 0;
-                dashTrail.clear(); // Clear trail when transitioning states
-                persistentBeams.clear(); // Clear rotating beams when transitioning
+            if (stateTransitionTimer > 0) {
+                stateTransitionTimer++;
+                if (stateTransitionTimer >= STATE_TRANSITION_DURATION) {
+                    stateTransitionTimer = 0;
+                    // Move to next attack state
+                    attackState = (attackState + 1) % 4;
+                    attackTimer = 0;
+                    shieldActive = false;
+                    dashHighlightTimer = 0;
+                    dashTrail.clear(); // Clear trail when transitioning states
+                    persistentBeams.clear(); // Clear rotating beams when transitioning
+                }
             }
         } else {
             // While dashing, keep transition timer reset so no other attack starts
@@ -120,6 +137,8 @@ public class PurpleBoss {
         if (prevState != attackState) {
             System.out.println("PurpleBoss: state changed " + prevState + " -> " + attackState + " (attackTimer=" + attackTimer + ")");
         }
+        if (rotatingBeamCueTimer > 0) rotatingBeamCueTimer--;
+        if (wallHitTimer > 0) wallHitTimer--;
     }
 
     private void updateBeamSpam(int playerX, int playerY) {
@@ -138,10 +157,10 @@ public class PurpleBoss {
             beamSpamAngle = Math.random() * Math.PI * 2;
         }
 
-        // Fire beams less frequently - every 30 frames instead of 15
+        // Fire beams less frequently - fewer beams but wider spread
         if (attackTimer % 25 == 0) {
-            // Fire 1-2 beams in random directions
-            int beamCount = 4 + (int)(Math.random() * 4);
+            // Fire 2-4 beams in random directions (reduced count)
+            int beamCount = 2 + (int)(Math.random() * 3);
             for (int i = 0; i < beamCount; i++) {
                 double beamAngle = Math.random() * Math.PI * 2;
                 Beam beam = new Beam(x, y, screenWidth, screenHeight, beamAngle);
@@ -152,9 +171,10 @@ public class PurpleBoss {
 
         beamSpamCounter++;
         if (beamSpamCounter % 90 == 0 && attackTimer < BEAM_SPAM_DURATION - 30) {
-            // Occasionally fire a volley toward player
-            for (int i = 0; i < 3; i++) {
-                double beamAngle = Math.atan2(playerY - y, playerX - x) + (i - 1.0) * 0.2;
+            // Occasionally fire a wider-spread volley toward player (fewer beams, bigger spread)
+            for (int i = 0; i < 2; i++) {
+                double offset = (i == 0) ? -0.6 : 0.6; // wider spread (~34 degrees)
+                double beamAngle = Math.atan2(playerY - y, playerX - x) + offset;
                 Beam beam = new Beam(x, y, screenWidth, screenHeight, beamAngle);
                 beam.setRemoveAfterFade(true);
                 beams.add(beam);
@@ -162,7 +182,14 @@ public class PurpleBoss {
         }
 
         if (attackTimer >= BEAM_SPAM_DURATION) {
-            stateTransitionTimer = STATE_TRANSITION_DURATION - 1; // Force state transition
+            // Immediately move into beam-spin state so boss will dash to center
+            attackState = 1;
+            attackTimer = 0;
+            stateTransitionTimer = 0;
+            shieldActive = false;
+            dashHighlightTimer = 0;
+            persistentBeams.clear();
+            System.out.println("PurpleBoss: transitioning to beam-spin (state=1)");
         }
     }
 
@@ -183,39 +210,60 @@ public class PurpleBoss {
                 shieldActive = true;
                 shieldTimer = 0;
             }
-        } else if (persistentBeams.isEmpty()) {
-            // Create 8 beams in a circle that will persist and rotate (only once, when beams list is empty)
-            for (int i = 0; i < 8; i++) {
-                double angle = (i * Math.PI * 2 / 8);
+        } else if (attackTimer >= 100 && persistentBeams.isEmpty()) {
+            // After dashing to center, create a smaller number of persistent rotating rectangular beams once
+            int count = 6; // fewer beams for wider gaps
+            for (int i = 0; i < count; i++) {
+                double angle = (i * Math.PI * 2 / count);
                 persistentBeams.add(new RotatingBeam(x, y, angle, screenWidth, screenHeight));
             }
             beamRotationAngle = 0;
             System.out.println("PurpleBoss: created persistent rotating beams at (" + x + "," + y + ")");
+            rotatingBeamCueTimer = 60; // one second visual cue
         } else if (attackTimer < BEAM_SPIN_DURATION) {
-            // Rotate the beams
-            beamRotationAngle += 0.02; // Slow rotation
-            
+            // Smooth slow rotation; slowed down overall and modestly faster at low HP
+            double baseSpeed = 0.002; // much slower baseline
+            if (hp < maxHp / 3) baseSpeed = 0.006; // low HP -> slightly faster
+            else if (hp < (maxHp * 2) / 3) baseSpeed = 0.004; // mid HP
+            beamRotationAngle += baseSpeed;
+
             // Update persistent beam positions and rotation
             for (RotatingBeam beam : persistentBeams) {
                 beam.update(x, y, beamRotationAngle);
                 beam.setScreenSize(screenWidth, screenHeight);
             }
-            
-            // Periodically fire additional temporary beams
-            if (attackTimer % 60 == 0 && attackTimer > 100) {
-                for (int i = 0; i < 3; i++) {
+
+            // Periodically fire additional temporary beams (less often)
+            if (attackTimer % 50 == 0 && attackTimer > 40) {
+                for (int i = 0; i < 2; i++) {
                     double angle = Math.random() * Math.PI * 2;
                     Beam beam = new Beam(x, y, screenWidth, screenHeight, angle);
                     beam.setRemoveAfterFade(true);
                     beams.add(beam);
                 }
             }
+
+            // Occasionally fire bullets outward while beams are active
+            if (attackTimer % 30 == 0) {
+                int shots = 6;
+                for (int i = 0; i < shots; i++) {
+                    double a = beamRotationAngle + (i * Math.PI * 2 / shots);
+                    spiralBullets.add(new EnemyProjectile(x, y, a, 4, Color.MAGENTA, 1));
+                }
+            }
         }
 
+        // End the beam-spin cleanly when duration is reached
         if (attackTimer >= BEAM_SPIN_DURATION) {
-            stateTransitionTimer = STATE_TRANSITION_DURATION - 1;
+            System.out.println("PurpleBoss: beam spin complete, clearing beams and advancing state");
+            persistentBeams.clear();
             shieldActive = false;
-            // Don't clear persistentBeams here - let state transition handle it
+            // Advance to next state immediately
+            attackState = (attackState + 1) % 4;
+            attackTimer = 0;
+            stateTransitionTimer = 0;
+            dashHighlightTimer = 0;
+            dashTrail.clear();
         }
     }
 
@@ -225,10 +273,18 @@ public class PurpleBoss {
         // Calculate number of dashes based on HP percentage
         if (dashAttackQueue.isEmpty() && attackTimer < 50) {
             int hpPercent = (hp * 100) / maxHp;
-            int dashCount = 2 + (100 - hpPercent) / 5; // 2-5 dashes as HP depletes
+            int dashCount = 2 + (100 - hpPercent) / 5; // base 2-5 dashes as HP depletes
+            // Increase dash aggressiveness when low HP
+            int extraDashes = (maxHp - hp) / (Math.max(1, maxHp / 6)); // 0..~5
+            dashCount += extraDashes;
             for (int i = 0; i < dashCount; i++) {
                 dashAttackQueue.add(i);
             }
+
+            // Compute per-dash scaling: allowed bounces and max frames increase as HP drops
+            int extra = (maxHp - hp) * 3 / Math.max(1, maxHp); // 0..3 roughly
+            currentDashAllowedBounces = 1 + extra; // at least 1 bounce required
+            currentDashMaxFrames = DASH_MAX_FRAMES + extra * 40; // longer dash cap at low HP
         }
 
         if (!dashAttackQueue.isEmpty()) {
@@ -241,6 +297,8 @@ public class PurpleBoss {
                     // Start new dash - target PLAYER position, not same spot
                     dashAngle = Math.atan2(playerY - y, playerX - x);
                     dashTrail.clear();
+                    dashBounces = 0;
+                    dashSpeed = 16.0;
                 }
 
                 dashTimer++;
@@ -252,9 +310,9 @@ public class PurpleBoss {
                     dashTrail.remove(0);
                 }
                 
-                // Move in dash direction
-                x += Math.cos(dashAngle) * 16;
-                y += Math.sin(dashAngle) * 16;
+                // Move in dash direction using variable speed
+                x += Math.cos(dashAngle) * dashSpeed;
+                y += Math.sin(dashAngle) * dashSpeed;
 
                 // Fire bullets occasionally while dashing
                 if (dashTimer % 20 == 0 && Math.random() > 0.3) {
@@ -273,45 +331,123 @@ public class PurpleBoss {
                     }
                 }
 
-                // Check if dash hit border (with 50 pixel margin)
-                if (x < -50 || x > screenWidth + 50 || y < -50 || y > screenHeight + 50) {
-                    // remove this dash and prepare next
-                    dashAttackQueue.remove(0);
-                    dashTimer = 0;
-                    // If there are more dashes queued, skip highlight to chain immediately
-                    if (!dashAttackQueue.isEmpty()) {
-                        dashHighlightTimer = DASH_HIGHLIGHT_DURATION; // treat highlight as already finished
-                    } else {
-                        dashHighlightTimer = 0;
+                // Bounce off screen bounds (use boss margins) instead of exiting the screen
+                boolean bounced = false;
+                int leftBound = 60;
+                int rightBound = screenWidth - 60;
+                int topBound = 60;
+                int bottomBound = screenHeight - 60;
+                if (x <= leftBound) {
+                    x = leftBound;
+                    dashAngle = Math.PI - dashAngle;
+                    bounced = true;
+                } else if (x >= rightBound) {
+                    x = rightBound;
+                    dashAngle = Math.PI - dashAngle;
+                    bounced = true;
+                }
+                if (y <= topBound) {
+                    y = topBound;
+                    dashAngle = -dashAngle;
+                    bounced = true;
+                } else if (y >= bottomBound) {
+                    y = bottomBound;
+                    dashAngle = -dashAngle;
+                    bounced = true;
+                }
+
+                if (bounced) {
+                    dashBounces++;
+                    // Slow down on bounce (less severe)
+                    dashSpeed *= 0.85;
+                    // nudge away from edge to avoid immediate re-collision
+                    x += Math.cos(dashAngle) * 8;
+                    y += Math.sin(dashAngle) * 8;
+                    // Wall-hit effect: small radial burst and flash
+                    wallHitTimer = 12;
+                    wallHitX = x;
+                    wallHitY = y;
+                    for (int p = 0; p < 6; p++) {
+                        double pa = Math.random() * Math.PI * 2;
+                        int psz = 2 + (int)(Math.random() * 2);
+                        spiralBullets.add(new EnemyProjectile(x, y, pa, psz, Color.CYAN, 0));
                     }
-                    // If all dashes done, trigger end-of-dash cue and transition
-                    if (dashAttackQueue.isEmpty()) {
-                        dashTrail.clear();
-                        persistentBeams.clear();
-                        // clamp back inside screen
-                        x = Math.max(60, Math.min(screenWidth - 60, x));
-                        y = Math.max(60, Math.min(screenHeight - 60, y));
-                        // visual/audio cue
-                        dashFinishTimer = 20;
-                        try {
-                            java.awt.Toolkit.getDefaultToolkit().beep();
-                        } catch (Exception ex) {
-                            // ignore if beep fails
+                    try { java.awt.Toolkit.getDefaultToolkit().beep(); } catch (Exception ex) {}
+                    // If we've hit the allowed number of bounces for this dash, treat it as completed
+                    if (dashBounces >= currentDashAllowedBounces) {
+                        if (!dashAttackQueue.isEmpty()) dashAttackQueue.remove(0);
+                        dashTimer = 0;
+                        if (!dashAttackQueue.isEmpty()) {
+                            dashHighlightTimer = DASH_HIGHLIGHT_DURATION;
+                        } else {
+                            // end of dash sequence: perform a short bullet/beam spam, then return to beam-spam state
+                            dashHighlightTimer = 0;
+                            dashTrail.clear();
+                            persistentBeams.clear();
+                            dashFinishTimer = 20;
+                            try { java.awt.Toolkit.getDefaultToolkit().beep(); } catch (Exception ex) {}
+                            // spawn a short spam burst then go to spiral attack
+                            for (int s = 0; s < 6; s++) {
+                                double a = Math.random() * Math.PI * 2;
+                                Beam b = new Beam(x, y, screenWidth, screenHeight, a);
+                                b.setRemoveAfterFade(true);
+                                beams.add(b);
+                            }
+                            for (int s = 0; s < 8; s++) {
+                                double a = Math.random() * Math.PI * 2;
+                                spiralBullets.add(new EnemyProjectile(x, y, a, 4, Color.MAGENTA, 1));
+                            }
+                            // advance to spiral attack next
+                            attackState = 3;
+                            attackTimer = 0;
+                            stateTransitionTimer = 0;
                         }
-                        // move to next attack state now that dash fully completed
-                        attackState = (attackState + 1) % 4;
-                        attackTimer = 0;
                     }
+                }
+                // Also end dash if it has run too long without sufficient bounces
+                if (dashTimer >= DASH_MAX_FRAMES) {
+                    if (!dashAttackQueue.isEmpty()) dashAttackQueue.remove(0);
+                    dashTimer = 0;
+                    dashHighlightTimer = 0;
+                    dashTrail.clear();
+                    persistentBeams.clear();
+                    dashFinishTimer = 20;
+                    try { java.awt.Toolkit.getDefaultToolkit().beep(); } catch (Exception ex) {}
+                    for (int s = 0; s < 4; s++) {
+                        double a = Math.random() * Math.PI * 2;
+                        Beam b = new Beam(x, y, screenWidth, screenHeight, a);
+                        b.setRemoveAfterFade(true);
+                        beams.add(b);
+                    }
+                    for (int s = 0; s < 6; s++) {
+                        double a = Math.random() * Math.PI * 2;
+                        spiralBullets.add(new EnemyProjectile(x, y, a, 4, Color.MAGENTA, 1));
+                    }
+                    attackState = 3;
+                    attackTimer = 0;
+                    stateTransitionTimer = 0;
                 }
             }
         }
 
         if (dashAttackQueue.isEmpty() && attackTimer >= DASH_ATTACK_DURATION) {
-            stateTransitionTimer = STATE_TRANSITION_DURATION - 1;
+            // Prime transition after dash attack completes
+            // If dash loop runs too long, end the sequence and do a short spam, then return to beam-spam
             dashTrail.clear();
-            // Bring boss back to screen
             x = Math.max(60, Math.min(screenWidth - 60, x));
             y = Math.max(60, Math.min(screenHeight - 60, y));
+            for (int s = 0; s < 4; s++) {
+                double a = Math.random() * Math.PI * 2;
+                Beam b = new Beam(x, y, screenWidth, screenHeight, a);
+                b.setRemoveAfterFade(true);
+                beams.add(b);
+            }
+            for (int s = 0; s < 6; s++) {
+                double a = Math.random() * Math.PI * 2;
+                spiralBullets.add(new EnemyProjectile(x, y, a, 4, Color.MAGENTA, 1));
+            }
+            attackState = 0;
+            attackTimer = 0;
         }
     }
 
@@ -329,8 +465,14 @@ public class PurpleBoss {
         }
 
         if (attackTimer >= SPIRAL_DURATION) {
-            stateTransitionTimer = STATE_TRANSITION_DURATION - 1;
+            // End spiral attack and transition immediately
+            System.out.println("PurpleBoss: spiral complete, advancing state");
             spiralAngle = 0;
+            persistentBeams.clear();
+            // Advance to next state
+            attackState = (attackState + 1) % 4;
+            attackTimer = 0;
+            stateTransitionTimer = 0;
         }
     }
 
@@ -356,6 +498,14 @@ public class PurpleBoss {
         for (RotatingBeam beam : persistentBeams) {
             if (beam.checkCollision(px, py)) return true;
         }
+        // Then check regular timed beams
+        for (Beam b : beams) {
+            try {
+                if (b.checkCollision(px, py)) return true;
+            } catch (Exception ex) {
+                // in case beam lacks method or errors, ignore
+            }
+        }
         return false;
     }
 
@@ -369,6 +519,15 @@ public class PurpleBoss {
         // Draw regular beams (behind)
         for (Beam beam : beams) {
             beam.draw(g);
+        }
+
+        // Draw persistent rotating beams (spawned during beam spin)
+        for (RotatingBeam beam : persistentBeams) {
+            try {
+                beam.draw(g);
+            } catch (Exception ex) {
+                // ignore drawing errors for safety
+            }
         }
 
         // Draw dash trail (older positions = more faded and smaller)
@@ -456,6 +615,27 @@ public class PurpleBoss {
             g.setColor(new Color(1f, 0.9f, 0.4f, Math.min(0.9f, alpha + 0.2f)));
             g.setStroke(new BasicStroke(3));
             g.drawOval(x - cueSize / 2, y - cueSize / 2, cueSize, cueSize);
+        }
+
+        // Rotating-beam spawn visual cue (pulsing magenta ring)
+        if (rotatingBeamCueTimer > 0) {
+            float prog = rotatingBeamCueTimer / 60.0f;
+            float alpha = 0.7f * prog;
+            int cueSize = 120 + (int)((1.0f - prog) * 60);
+            g.setColor(new Color(1f, 0f, 1f, alpha));
+            g.fillOval(x - cueSize / 2, y - cueSize / 2, cueSize, cueSize);
+            g.setColor(new Color(1f, 0f, 1f, Math.min(0.95f, alpha + 0.2f)));
+            g.setStroke(new BasicStroke(3));
+            g.drawOval(x - cueSize / 2, y - cueSize / 2, cueSize, cueSize);
+        }
+
+        // Wall-hit flash effect
+        if (wallHitTimer > 0) {
+            float prog = (float) wallHitTimer / 12.0f;
+            float alpha = 0.9f * prog;
+            int size = 40 + (int) ((1.0f - prog) * 80);
+            g.setColor(new Color(0.4f, 0.9f, 1f, alpha));
+            g.fillOval(wallHitX - size / 2, wallHitY - size / 2, size, size);
         }
 
         // HP bar drawing is handled by GamePanel to avoid duplicate UI elements

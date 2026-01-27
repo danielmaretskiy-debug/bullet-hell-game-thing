@@ -21,6 +21,8 @@ public class Player {
     private boolean piercingShots = false;
     private boolean tripleShot = false;
     private boolean slowFieldActive = false;
+    private int damageCooldown = 0; // frames of invulnerability after taking damage
+    private static final int DAMAGE_COOLDOWN_FRAMES = 30;
 
     public Player(int x, int y) {
         this.x = x;
@@ -55,6 +57,7 @@ public class Player {
 
         if (dashCooldown > 0) dashCooldown--;
         if (shootCooldown > 0) shootCooldown--;
+        if (damageCooldown > 0) damageCooldown--;
     }
 
     public void dash(int directionX, int directionY) {
@@ -90,8 +93,9 @@ public class Player {
     }
 
     public void takeDamage(int damage) {
-        if (dashDuration == 0) {
+        if (dashDuration == 0 && damageCooldown == 0) {
             hp -= damage;
+            damageCooldown = DAMAGE_COOLDOWN_FRAMES;
         }
     }
 

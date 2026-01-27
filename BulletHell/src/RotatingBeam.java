@@ -54,17 +54,23 @@ public class RotatingBeam {
     }
 
     public boolean checkCollision(int px, int py) {
+        // Transform point into beam-local coordinates (beam drawn at x=0..beamLength, y=-BEAM_WIDTH/2..BEAM_WIDTH/2)
+        double finalAngle = baseAngle + rotationOffset;
         double dx = px - centerX;
         double dy = py - centerY;
-        double dist = Math.sqrt(dx * dx + dy * dy);
-        double angle = Math.atan2(dy, dx);
-        double finalAngle = baseAngle + rotationOffset;
-
-        double angleDiff = angle - finalAngle;
-        while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        double c = Math.cos(finalAngle);
+        double s = Math.sin(finalAngle);
+        // rotate point by -finalAngle
+        double localX = c * dx + s * dy;
+        double localY = -s * dx + c * dy;
 
         int beamLength = (int) Math.sqrt(screenWidth * screenWidth + screenHeight * screenHeight);
-        return Math.abs(angleDiff) < 0.5 && dist > 20 && dist < beamLength;
+        int halfH = BEAM_WIDTH / 2;
+
+        // Beam rectangle spans from localX in [0, beamLength]
+        if (localX >= 0 && localX <= beamLength && localY >= -halfH && localY <= halfH) {
+            if (Math.hypot(localX, localY) > 20) return true;
+        }
+        return false;
     }
 }
