@@ -220,6 +220,7 @@ public class GamePanel extends JPanel {
             greenTriangleEnemies.clear();
             purpleTriangleEnemies.clear();
             purpleCircleEnemies.clear();
+            healingItems.clear();
             enemiesSpawned = 0;
             
             // Scale enemy spawning based on wave
